@@ -37,18 +37,28 @@ class obstacle
 		sf:: ConvexShape box_sprite;
 		float angle;
 		float points=0;
-		float box_factor = 0.4; //each triangle is surrounded by a "box" so that surrounding objects know when to measure distance
+		float box_factor = 0.4;
 		int c[6]; //x1, y1, |x2, y2, x3, y3|<-this must corespond to the hypothenuse
 		int x, y, adj, opp; //adjacent and opposite sides
-		int box[4];
+		int box[4]; //each triangle is surrounded by a "box" with dimensions larger than itself so that surrounding objects know when to measure distance
+		int innerbox[4]; //(xmin, xmax, ymin, ymax) format, like the one above,  this is a smaller box with dimensions similar to the triangle's
 		obstacle(int xpos, int ypos, int a, int o)
 		{
 			x = xpos; y = ypos;
 			adj = a; opp = o;
 			c[0] = x; c[1] = y+opp; c[2] = x+adj; c[3] = y+opp; c[4] = x; c[5] = y;
 			angle = std::atan2(opp, adj);
-			box[0] = c[0]-adj*box_factor; box[1] = c[2]+adj*box_factor; box[2] = c[5]-opp*box_factor; box[3] = c[1]+opp*box_factor;
+			//one or both sides of the triangle may be negative, which makes detrmining wether or not a vertex is in the box very hard
+			innerbox[0] = std::min(c[0], c[2]);
+                        innerbox[1] = std::max(c[0], c[2]);
+                        innerbox[2] = std::min(c[1], c[5]);
+                        innerbox[3] = std::max(c[1], c[5]);
+			box[0] = innerbox[0]-std::abs(adj*box_factor);
+			box[1] = innerbox[1]+std::abs(adj*box_factor);
+			box[2] = innerbox[2]-std::abs(opp*box_factor);
+			box[3] = innerbox[3]+std::abs(opp*box_factor);
 			obs.push_back(this); //add own adress to the list of obstacles
+			//the sprite isnt movable
 			sprite.setPointCount(3);
 			sprite.setPoint(0, sf::Vector2f(c[0], c[1]));
 			sprite.setPoint(1, sf::Vector2f(c[2], c[3]));
@@ -58,7 +68,7 @@ class obstacle
 		void display()
 		{
 			window.draw(sprite);
-			//display_box();
+			display_box();
 		}
 		void display_box()
 		{
@@ -117,13 +127,21 @@ class vertex
 			for(size_t i = 0; i < obs.size(); i++)
 			{
 				obstacle* o = obs[i];
-				if(x+radius > o->box[0] and x+radius < o->box[1] and y+radius > o->box[2] and y+radius < o->box[3])
+				//std::cout << "x: " << x << " y: " << y << " box: " << o->box[0] << " ; " << o->box[1] << "; "<< o->box[2] << "; "<< o->box[3] << "\n";
+				if(x+radius > o->box[0] and x+radius < o->box[1] and y+radius > o->box[2] and y+radius < o->box[3])//of the center is in that box
 				{
-					if(x+radius >= o->c[0] and x+radius <= o->c[2] and y < o->c[1])
+					if(x+radius >= o->innerbox[0] and x+radius <= o->innerbox[1])
 					{
 						//find shortest distance to the surface with orthogonal projection
-						std::tuple<float, float> p = projection(o->c[4], o->c[5], o->c[2], o->c[3], x+radius, y+radius);
+						std::tuple<float, float> p = projection(o->c[2], o->c[3], o->c[4], o->c[5], x+radius, y+radius);
 						float l = std::hypot(std::get<0>(p)-(x+radius), std::get<1>(p)-(y+radius));
+						//TEST-----------------------------
+						sf::CircleShape sprite2;
+						sprite2.setRadius(5);
+						sprite2.setFillColor(sf::Color(0, 255, 0));
+						sprite2.setPosition(std::get<0>(p), std::get<1>(p));
+						window.draw(sprite2);
+						//---------------------------------
 						if(l<=radius)
 						{
 							//simulate normal force
@@ -133,12 +151,15 @@ class vertex
 							std::tuple<float, float> p2 = projection(0, 0, 1, tempy, xforce, yforce);
 							//calculate normal reaction by getting length of projected vector
 							float f = std::hypot(std::get<0>(p2), std::get<1>(p2));
-							//std::cout << "edge vector: " <<  o->c[2]-o->c[4] << ";" << o->c[5]-o->c[3]
-							//<< "\nnormal vector: 1;" << tempy
-							//<< "\nforce vector: ;" << xforce << ";" << yforce
-							//<< "\nprojected vector: " << std::get<0>(p2) << ";" << std::get<1>(p2) << "\n\n";
-							float ynorm = f*std::cos(o->angle);
-                                                        float xnorm = f*std::sin(o->angle);
+							std::cout << "edge vector: " <<  o->c[4]-o->c[2] << ";" << o->c[5]-o->c[3]
+							<< "\nangle: " << o->angle
+							<< "\nnormal vector: 1;" << tempy
+							<< "\nforce vector: " << xforce << ";" << yforce
+							<< "\nprojected vector: " << std::get<0>(p2) << ";" << std::get<1>(p2) 
+							<< "\nforce: " << f << "\n\n";
+							float ynorm = std::abs(f*std::cos(o->angle));
+                                                        float xnorm = std::abs(f*std::sin(o->angle));
+							std::cout << "NORM: " << xnorm << ";" << ynorm << "\n";
 							if(o->opp>0)//slide down
 							{
 								yforce -= ynorm;
@@ -275,13 +296,10 @@ class edge
 int main()
 {
 	int sleep;
-	vertex v1(500, 400, 1);
-	vertex v2(1000, 400, 2);
-	vertex v3(750, 200, 3);
-	edge e1(&v1, &v2);
-	edge e2(&v2, &v3);
-	edge e3(&v3, &v1);
-	obstacle o1(200, winy-500, 800, 400);
+	vertex v1(700, 400, 1);//vertex v2(1200, 400, 2);vertex v3(950, 200, 3);
+	//edge e1(&v1, &v2);edge e2(&v2, &v3);edge e3(&v3, &v1);
+	//obstacle o1(1800, winy-500, -800, 400);
+	obstacle o2(200, winy-500, 800, 400);
 //-------------------------------------------------//
 	while (window.isOpen())
 	{
@@ -289,9 +307,10 @@ int main()
 		//do stuff here                                             
 		window.display();
 		window.clear();
-		o1.display();
-		e1.update(); e2.update(); e3.update();
-		v1.update(); v2.update(); v3.update();
+		//o1.display();
+		o2.display();
+		//e1.update(); e2.update(); e3.update();
+		v1.update(); //v2.update(); v3.update();
 		//-------------
 		auto end = std::chrono::steady_clock::now();
 		std::chrono::duration<float> elapsed_seconds = end-start;
