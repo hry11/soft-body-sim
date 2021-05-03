@@ -7,15 +7,17 @@
 sf::RenderWindow window(sf::VideoMode(1920, 1080), "Sim",sf::Style::Default);
 int winx = window.getSize().x;
 int winy = window.getSize().y;
-float size_ratio = 4000; //physics numbers are in SI, computer thinks in pixels
+float size_ratio = 15; //physics numbers are in SI, computer thinks in pixels
 float grav_acc = 9.81;
 float grav_constant = 6.67;
-float dt = 0.005;//0.01666667; //framerate and timestep
+float dt = 0.01666667; //framerate and timestep
 const int max_edges = 7; //maximum number of edges per vertex, no need to be above number of vertices-1
 class vertex;
 class edge;
 class obstacle;
 std::vector<obstacle*> obs;
+std::vector<vertex> verticesvec;
+std::vector<edge> edgesvec;
 
 float dot(float x1, float y1, float x2, float y2) //dot product
 {
@@ -68,7 +70,7 @@ class obstacle
 		void display()
 		{
 			window.draw(sprite);
-			display_box();
+			//display_box();
 		}
 		void display_box()
 		{
@@ -91,9 +93,10 @@ class vertex
 		float xacc, yacc; //acceleration vector
 		float xforce, yforce; //force applied on the vertex
 		float mass;
-		int radius = 50;
+		int radius = 10;
 		int diam = 2*radius;
 		bool yblock = false, xblock = false; //blocks the vertex on the x or y axis, useful for tests
+		bool contact = false; //collisions are perfectly inelastic, so the speed is put to 0 when one happens, this allows to only do it at the instant of the collision and not all throughout contact with an obstacle
 		sf::CircleShape sprite;
 		sf::RectangleShape force_sprite;
 		vertex(float xpos, float ypos, int num)
@@ -135,15 +138,13 @@ class vertex
 						//find shortest distance to the surface with orthogonal projection
 						std::tuple<float, float> p = projection(o->c[2], o->c[3], o->c[4], o->c[5], x+radius, y+radius);
 						float l = std::hypot(std::get<0>(p)-(x+radius), std::get<1>(p)-(y+radius));
-						//TEST-----------------------------
-						sf::CircleShape sprite2;
-						sprite2.setRadius(5);
-						sprite2.setFillColor(sf::Color(0, 255, 0));
-						sprite2.setPosition(std::get<0>(p), std::get<1>(p));
-						window.draw(sprite2);
-						//---------------------------------
 						if(l<=radius)
 						{
+							if(contact == false)
+							{
+								xspeed=0; yspeed=0;
+								contact = true;
+							}
 							//simulate normal force
 							//find a temporary vector perpendicular to the surface
 							float tempy = static_cast<float> (o->c[2]-o->c[4]) / static_cast<float> (o->c[5]-o->c[3]);
@@ -151,15 +152,14 @@ class vertex
 							std::tuple<float, float> p2 = projection(0, 0, 1, tempy, xforce, yforce);
 							//calculate normal reaction by getting length of projected vector
 							float f = std::hypot(std::get<0>(p2), std::get<1>(p2));
-							std::cout << "edge vector: " <<  o->c[4]-o->c[2] << ";" << o->c[5]-o->c[3]
-							<< "\nangle: " << o->angle
-							<< "\nnormal vector: 1;" << tempy
-							<< "\nforce vector: " << xforce << ";" << yforce
-							<< "\nprojected vector: " << std::get<0>(p2) << ";" << std::get<1>(p2) 
-							<< "\nforce: " << f << "\n\n";
+							//std::cout << "edge vector: " <<  o->c[4]-o->c[2] << ";" << o->c[5]-o->c[3]
+							//<< "\nangle: " << o->angle
+							//<< "\nnormal vector: 1;" << tempy
+							//<< "\nforce vector: " << xforce << ";" << yforce
+							//<< "\nprojected vector: " << std::get<0>(p2) << ";" << std::get<1>(p2) 
+							//<< "\nforce: " << f << "\n\n";
 							float ynorm = std::abs(f*std::cos(o->angle));
                                                         float xnorm = std::abs(f*std::sin(o->angle));
-							std::cout << "NORM: " << xnorm << ";" << ynorm << "\n";
 							if(o->opp>0)//slide down
 							{
 								yforce -= ynorm;
@@ -177,6 +177,10 @@ class vertex
 								xforce -= xnorm;
 							}
 						}
+						else
+						{
+							contact = false;
+						}
 					}
 					//eventually add case if it hits from under or the side
 				}
@@ -185,10 +189,10 @@ class vertex
 		void update()
 		{
 			bounds();
-			yforce += grav_acc; //remove this section to disable gravity
+			yforce += grav_acc;
 			obstacles();
 			xacc = xforce/mass; yacc = yforce/mass;
-			xspeed = xacc*dt; yspeed = yacc*dt;
+			xspeed += xacc*dt; yspeed += yacc*dt;
 			if(xblock == false)
 			{
 				x += xspeed*dt*size_ratio;
@@ -204,7 +208,7 @@ class vertex
 		}
 		void display()
 		{
-			display_force();
+			//display_force();
 			sprite.setPosition(x, y);
 			window.draw(sprite);
 		}
@@ -238,24 +242,27 @@ class edge
 {
 	public:
 		vertex *vertex1, *vertex2;
-		float l0 = 300; //resting lenght of the spring
-		float k = 0.15; //spring constant, forces will be calculated using hooke's law
+		float l0; //resting lenght of the spring
+		float maxcomp, maxext;
+		float k = 0.2; //spring constant, forces will be calculated using hooke's law
 		float force, fx, fy;
 		float x1, y1, x2, y2;
 		float adj, opp, hyp, angle; //sides of the triangle and orientation
 		int thickness = 3;
 		int vertex_rad;
 		sf::RectangleShape sprite;
-		edge(vertex *v1, vertex*v2)
+		edge(vertex *v1, vertex *v2, float l=300)
 		{
+			l0 = l;
+			maxcomp = l0*0.5;
+			maxext = l0*1.5;
 			vertex1 = v1; vertex2 = v2;
 			vertex_rad = vertex1->radius;
 			update();
 		}
 		float spring()
 		{
-			//return -k*(hyp-l0); //this is the actual hooke's law, but we try to emulate energy loss
-			return -k*(hyp-l0); //this is the actual hooke's law, but we try to emulate energy loss
+			return -k*(hyp-l0);
 		}
 		void update()
 		{
@@ -264,6 +271,12 @@ class edge
 			adj = x2 - x1;
 			opp = y2 - y1;
 			hyp = std::hypot(adj, opp); 
+			//simulate energy loss
+			if(hyp<maxcomp or hyp>maxext)
+			{
+				vertex1->xspeed*=-0.3;vertex2->xspeed*=-0.3;
+				vertex1->yspeed*=-0.3;vertex2->yspeed*=-0.3;
+			}
 			if(adj != 0)
 			{
 				angle = std::atan2(opp, adj);
@@ -279,7 +292,6 @@ class edge
 			vertex1->xforce -=fx; vertex2->xforce += fx;
 			//now y coordinates
 			vertex1->yforce -=fy; vertex2->yforce += fy;
-			//std::cout << "edge: hyp:" << hyp << "| force:" << force << "| angle:" << angle << "| fx:" << fx << "| fy:" << fy << "\n\n";
 			display();
 		}
 		void display()
@@ -293,13 +305,51 @@ class edge
 		}
 };
 
+void mesh(int x, int y, int w, int h, int l) //creates a mesh structure
+{
+	for(int i=0; i<h; i++)
+	{
+		for(int j=0; j<w; j++)
+		{
+			vertex v(x+j*l, y+i*l, (i*w)+j);
+			verticesvec.push_back(v);
+		}
+	}
+	//now build edges
+	for(int i=0; i<h; i++)
+	{
+		for(int j=0; j<w; j++)
+		{
+			int a = (i*w)+j; //position in the array
+			if(j<w-1)
+			{
+				edge e1(&verticesvec[a], &verticesvec[a+1], l);
+				edgesvec.push_back(e1);
+				if(i>0)
+				{
+					edge e3(&verticesvec[a], &verticesvec[a-w+1], std::hypot(l,l));
+					edgesvec.push_back(e3);
+				}
+				if(i<h-1)
+				{
+					edge e4(&verticesvec[a], &verticesvec[a+w+1], std::hypot(l,l));
+					edgesvec.push_back(e4);
+				}
+			}
+			if(i<h-1)
+			{
+				edge e2(&verticesvec[a], &verticesvec[a+w], l);
+				edgesvec.push_back(e2);
+			}
+		}
+	}
+}
+
 int main()
 {
 	int sleep;
-	vertex v1(700, 400, 1);//vertex v2(1200, 400, 2);vertex v3(950, 200, 3);
-	//edge e1(&v1, &v2);edge e2(&v2, &v3);edge e3(&v3, &v1);
-	//obstacle o1(1800, winy-500, -800, 400);
-	obstacle o2(200, winy-500, 800, 400);
+	mesh(300, 100, 2, 2, 50);
+	obstacle o1(200, winy-700, 800, 400);
 //-------------------------------------------------//
 	while (window.isOpen())
 	{
@@ -307,10 +357,15 @@ int main()
 		//do stuff here                                             
 		window.display();
 		window.clear();
-		//o1.display();
-		o2.display();
-		//e1.update(); e2.update(); e3.update();
-		v1.update(); //v2.update(); v3.update();
+		o1.display();
+		for(size_t i = 0; i < verticesvec.size(); i++)
+		{
+			verticesvec[i].update();
+		}
+		for(size_t i = 0; i < edgesvec.size(); i++)
+		{
+			edgesvec[i].update();
+		}
 		//-------------
 		auto end = std::chrono::steady_clock::now();
 		std::chrono::duration<float> elapsed_seconds = end-start;
