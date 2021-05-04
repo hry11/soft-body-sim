@@ -7,10 +7,10 @@
 sf::RenderWindow window(sf::VideoMode(1920, 1080), "Sim",sf::Style::Default);
 int winx = window.getSize().x;
 int winy = window.getSize().y;
-float size_ratio = 15; //physics numbers are in SI, computer thinks in pixels
+float size_ratio = 80; //physics numbers are in SI, computer thinks in pixels
 float grav_acc = 9.81;
 float grav_constant = 6.67;
-float dt = 0.01666667; //framerate and timestep
+float dt = 0.001;//0.01666667; //framerate and timestep
 const int max_edges = 7; //maximum number of edges per vertex, no need to be above number of vertices-1
 class vertex;
 class edge;
@@ -189,9 +189,9 @@ class vertex
 		void update()
 		{
 			bounds();
-			yforce += grav_acc;
 			obstacles();
 			xacc = xforce/mass; yacc = yforce/mass;
+			yacc += grav_acc;
 			xspeed += xacc*dt; yspeed += yacc*dt;
 			if(xblock == false)
 			{
@@ -230,11 +230,11 @@ class vertex
 			float angle_diff = (angle*180/M_PI) - force_sprite.getRotation();
 			force_sprite.rotate(angle_diff);
 			window.draw(force_sprite);
-			//std::cout << "number:"  << number << "| x:" << x << "| y:" << y 
-			//<< "| xforce:" << xforce << "| yforce:" << yforce
-			//<< "| xspeed:" << xspeed << "| yspeed:" << yspeed
-			//<< "| xacc:" << xacc << "; yacc:" << yacc << "| angle:" 
-			//<< angle*180/M_PI << "\n";
+			std::cout << "number:"  << number << "| x:" << x << "| y:" << y 
+			<< "| xforce:" << xforce << "| yforce:" << yforce
+			<< "| xspeed:" << xspeed << "| yspeed:" << yspeed
+			<< "| xacc:" << xacc << "; yacc:" << yacc << "| angle:" 
+			<< angle*180/M_PI << "\n";
 		}
 };
 
@@ -244,7 +244,8 @@ class edge
 		vertex *vertex1, *vertex2;
 		float l0; //resting lenght of the spring
 		float maxcomp, maxext;
-		float k = 0.2; //spring constant, forces will be calculated using hooke's law
+		float damp = 1;
+		float k = 5; //spring constant, forces will be calculated using hooke's law
 		float force, fx, fy;
 		float x1, y1, x2, y2;
 		float adj, opp, hyp, angle; //sides of the triangle and orientation
@@ -255,7 +256,7 @@ class edge
 		{
 			l0 = l;
 			maxcomp = l0*0.5;
-			maxext = l0*1.5;
+			maxext = l0*1.25;
 			vertex1 = v1; vertex2 = v2;
 			vertex_rad = vertex1->radius;
 			update();
@@ -271,12 +272,6 @@ class edge
 			adj = x2 - x1;
 			opp = y2 - y1;
 			hyp = std::hypot(adj, opp); 
-			//simulate energy loss
-			if(hyp<maxcomp or hyp>maxext)
-			{
-				vertex1->xspeed*=-0.3;vertex2->xspeed*=-0.3;
-				vertex1->yspeed*=-0.3;vertex2->yspeed*=-0.3;
-			}
 			if(adj != 0)
 			{
 				angle = std::atan2(opp, adj);
@@ -286,12 +281,22 @@ class edge
 				angle = std::asin(opp/hyp);
 			}
 			force = spring();
+			//hooke's law only applies for "reasonable" extension values of the spring
+			if(hyp<maxcomp or hyp>maxext)
+			{
+				force *=2;
+			}
 			fx = force*std::cos(angle);
 			fy = force*std::sin(angle);
 			//apply that force to both ends
 			vertex1->xforce -=fx; vertex2->xforce += fx;
 			//now y coordinates
 			vertex1->yforce -=fy; vertex2->yforce += fy;
+			//damping
+			if(vertex1->xforce>0){vertex1->xforce -= vertex1->xspeed*damp;}
+			if(vertex1->yforce>0){vertex1->yforce -= vertex1->yspeed*damp;}
+			if(vertex2->xforce>0){vertex2->xforce -= vertex2->xspeed*damp;}
+			if(vertex2->yforce>0){vertex2->yforce -= vertex2->yspeed*damp;}
 			display();
 		}
 		void display()
@@ -348,8 +353,8 @@ void mesh(int x, int y, int w, int h, int l) //creates a mesh structure
 int main()
 {
 	int sleep;
-	mesh(300, 100, 2, 2, 50);
-	obstacle o1(200, winy-700, 800, 400);
+	mesh(850, 100, 2, 2, 80);
+	obstacle o1(400, winy-500, 800, 400);
 //-------------------------------------------------//
 	while (window.isOpen())
 	{
