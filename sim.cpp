@@ -10,7 +10,7 @@ int winy = window.getSize().y;
 float size_ratio = 80; //physics numbers are in SI, computer thinks in pixels
 float grav_acc = 9.81;
 float grav_constant = 6.67;
-float dt = 0.001;//0.01666667; //framerate and timestep
+float dt = 0.01666667; //framerate and timestep
 const int max_edges = 7; //maximum number of edges per vertex, no need to be above number of vertices-1
 class vertex;
 class edge;
@@ -116,12 +116,12 @@ class vertex
 		{
 			if((y+diam >= winy and yspeed>0) or (y <= 0 and yspeed<0))
 			{
-				yblock = true;
+				yspeed = 0;
 				yforce = 0;
 			}
 			if((x+diam >= winx and xspeed>0) or (x <= 0 and xspeed<0))
 			{
-				xblock = true;
+				xspeed = 0;
 				xforce = 0;
 			}
 		}
@@ -140,9 +140,11 @@ class vertex
 						float l = std::hypot(std::get<0>(p)-(x+radius), std::get<1>(p)-(y+radius));
 						if(l<=radius)
 						{
+							//eventually adjust position to avoid clipping
+							//sprite.setFillColor(sf::Color(255, 0, 0));
 							if(contact == false)
 							{
-								xspeed=0; yspeed=0;
+								xspeed=0; yspeed=0;//perfectly inelastic collision
 								contact = true;
 							}
 							//simulate normal force
@@ -179,6 +181,7 @@ class vertex
 						}
 						else
 						{
+							//sprite.setFillColor(sf::Color(255, 255, 255));
 							contact = false;
 						}
 					}
@@ -188,11 +191,11 @@ class vertex
 		}
 		void update()
 		{
-			bounds();
+			yforce += mass*grav_acc;
 			obstacles();
 			xacc = xforce/mass; yacc = yforce/mass;
-			yacc += grav_acc;
 			xspeed += xacc*dt; yspeed += yacc*dt;
+			bounds();
 			if(xblock == false)
 			{
 				x += xspeed*dt*size_ratio;
@@ -353,7 +356,7 @@ void mesh(int x, int y, int w, int h, int l) //creates a mesh structure
 int main()
 {
 	int sleep;
-	mesh(850, 100, 2, 2, 80);
+	mesh(500, 100, 5, 3, 80);
 	obstacle o1(400, winy-500, 800, 400);
 //-------------------------------------------------//
 	while (window.isOpen())
