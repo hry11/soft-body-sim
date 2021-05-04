@@ -39,7 +39,7 @@ class obstacle
 		sf:: ConvexShape box_sprite;
 		float angle;
 		float points=0;
-		float box_factor = 0.4;
+		float box_factor = 0;
 		int c[6]; //x1, y1, |x2, y2, x3, y3|<-this must corespond to the hypothenuse
 		int x, y, adj, opp; //adjacent and opposite sides
 		int box[4]; //each triangle is surrounded by a "box" with dimensions larger than itself so that surrounding objects know when to measure distance
@@ -355,9 +355,13 @@ void mesh(int x, int y, int w, int h, int l) //creates a mesh structure
 
 int main()
 {
+	std::this_thread::sleep_for (std::chrono::seconds(5));
 	int sleep;
-	mesh(500, 100, 5, 3, 80);
-	obstacle o1(400, winy-500, 800, 400);
+	mesh(400, 50, 3, 4, 80);
+	vertex v1(100, 50, 0);
+	edge e1(&verticesvec[0], &v1);
+	//obstacle o1(100, winy-800, 800, 400);
+	//obstacle o2(1800, winy-450, -900, 400);
 //-------------------------------------------------//
 	while (window.isOpen())
 	{
@@ -365,7 +369,10 @@ int main()
 		//do stuff here                                             
 		window.display();
 		window.clear();
-		o1.display();
+		v1.xblock = 1; v1.yblock = 1;
+		v1.update();
+		e1.update();
+		//o1.display();o2.display();
 		for(size_t i = 0; i < verticesvec.size(); i++)
 		{
 			verticesvec[i].update();
