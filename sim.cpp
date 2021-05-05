@@ -32,6 +32,13 @@ std::tuple<float, float> projection(float x1, float y1, float x2, float y2, floa
 	return proj;
 }
 
+float signum(float x)
+{
+	if(x>0){return 1;}
+	else if(x<0){return -1;}
+	else{return 0;}
+}
+
 class obstacle
 {
 	public:
@@ -106,7 +113,7 @@ class vertex
 			xspeed = 0; yspeed = 0;
 			xacc = 0; yacc = grav_acc;
 			xforce = 0; yforce = 0; //we dont take the earth's pull into account (acceleration already defined)
-			mass = 1;
+			mass = 5;
 			//visual aspect
 			sprite.setRadius(radius);
 			sprite.setFillColor(sf::Color(255, 255, 255));
@@ -141,17 +148,21 @@ class vertex
 						if(l<=radius)
 						{
 							//eventually adjust position to avoid clipping
-							//sprite.setFillColor(sf::Color(255, 0, 0));
-							if(contact == false)
-							{
-								xspeed=0; yspeed=0;//perfectly inelastic collision
-								contact = true;
-							}
 							//simulate normal force
 							//find a temporary vector perpendicular to the surface
+							float tempx = 1;
 							float tempy = static_cast<float> (o->c[2]-o->c[4]) / static_cast<float> (o->c[5]-o->c[3]);
+							//make it point outside the triangle
+							if(o->adj<0){tempx*=-1;tempy*=-1;}
+							//if the speed vector is oriented towards the triangle+contact, loose momentum
+							float speed_orientation = std::acos((dot(xspeed, yspeed, tempx, tempy))/(std::hypot(xspeed, yspeed)*std::hypot(tempx, tempy)));
+							std::cout << xspeed << ";" << yspeed << "|" << tempx << ";" << tempy << "|" << speed_orientation << "\n";
+							if(speed_orientation>M_PI/2+0.0001)//the 0.0001 fixes a precision issue
+							{
+								xspeed=0; yspeed=0;//perfectly inelastic collision
+							}
 							//project the force vector onto it
-							std::tuple<float, float> p2 = projection(0, 0, 1, tempy, xforce, yforce);
+							std::tuple<float, float> p2 = projection(0, 0, tempx, tempy, xforce, yforce);
 							//calculate normal reaction by getting length of projected vector
 							float f = std::hypot(std::get<0>(p2), std::get<1>(p2));
 							//std::cout << "edge vector: " <<  o->c[4]-o->c[2] << ";" << o->c[5]-o->c[3]
@@ -178,11 +189,6 @@ class vertex
 							{
 								xforce -= xnorm;
 							}
-						}
-						else
-						{
-							//sprite.setFillColor(sf::Color(255, 255, 255));
-							contact = false;
 						}
 					}
 					//eventually add case if it hits from under or the side
@@ -248,7 +254,7 @@ class edge
 		float l0; //resting lenght of the spring
 		float maxcomp, maxext;
 		float damp = 1;
-		float k = 5; //spring constant, forces will be calculated using hooke's law
+		float k = 50; //spring constant, forces will be calculated using hooke's law
 		float force, fx, fy;
 		float x1, y1, x2, y2;
 		float adj, opp, hyp, angle; //sides of the triangle and orientation
@@ -355,13 +361,12 @@ void mesh(int x, int y, int w, int h, int l) //creates a mesh structure
 
 int main()
 {
-	std::this_thread::sleep_for (std::chrono::seconds(5));
+	//std::this_thread::sleep_for (std::chrono::seconds(5));
 	int sleep;
-	mesh(400, 50, 3, 4, 80);
-	vertex v1(100, 50, 0);
-	edge e1(&verticesvec[0], &v1);
-	//obstacle o1(100, winy-800, 800, 400);
-	//obstacle o2(1800, winy-450, -900, 400);
+	mesh(winx/2-300, 50, 3, 3, 80);
+	obstacle o1(0, winy/2-400, winx/2+200, 300);
+	obstacle o2(winx, winy/2, -winx/2, winy/2);
+//-------------------------------------------------//
 //-------------------------------------------------//
 	while (window.isOpen())
 	{
@@ -369,10 +374,7 @@ int main()
 		//do stuff here                                             
 		window.display();
 		window.clear();
-		v1.xblock = 1; v1.yblock = 1;
-		v1.update();
-		e1.update();
-		//o1.display();o2.display();
+		o1.display();o2.display();
 		for(size_t i = 0; i < verticesvec.size(); i++)
 		{
 			verticesvec[i].update();
